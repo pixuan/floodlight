@@ -2,6 +2,7 @@ package net.floodlightcontroller.failover;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -22,13 +23,17 @@ import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
+import net.floodlightcontroller.linkdiscovery.ILinkDiscovery;
+import net.floodlightcontroller.linkdiscovery.ILinkDiscovery.LDUpdate;
+import net.floodlightcontroller.topology.ITopologyListener;
+import net.floodlightcontroller.topology.ITopologyService;
 
-public class FailureDiscovery implements IOFMessageListener, IFloodlightModule {
+public class FailureDiscovery implements IOFMessageListener, IFloodlightModule, ITopologyListener{
 
 	protected IFloodlightProviderService floodlightProvider;
 	protected Set<Long> macAddresses;
 	protected static Logger logger;
-	
+	protected ITopologyService topologyService;
 	
 	//********************
 	// IFloodlightModule
@@ -75,9 +80,9 @@ public class FailureDiscovery implements IOFMessageListener, IFloodlightModule {
 	public void init(FloodlightModuleContext context)
 			throws FloodlightModuleException {
 		floodlightProvider = context.getServiceImpl(IFloodlightProviderService.class);
-		
 		macAddresses = new ConcurrentSkipListSet<Long>();
 		logger = LoggerFactory.getLogger(FailureDiscovery.class);
+		topologyService = context.getServiceImpl(ITopologyService.class);
 
 	}
 
@@ -86,6 +91,7 @@ public class FailureDiscovery implements IOFMessageListener, IFloodlightModule {
 			throws FloodlightModuleException {
 		floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
 		floodlightProvider.addOFMessageListener(OFType.FLOW_MOD, this);
+		topologyService.addListener(this);
 
 	}
 
@@ -122,6 +128,26 @@ public class FailureDiscovery implements IOFMessageListener, IFloodlightModule {
 		System.out.println("id:" + id + "msg:" + msg.getVersion());
 		System.out.println("**********packet in***********");
 		return Command.CONTINUE;
+	}
+
+	//********************
+	// ITopologyListener
+	//********************
+	
+	@Override
+	public void topologyChanged(List<LDUpdate> linkUpdates) {
+		System.out.println("**********topology have changed!***********");
+		for(LDUpdate ldu : linkUpdates) {
+			if(ldu.getOperation().equals(ILinkDiscovery.UpdateOperation.LINK_REMOVED)) {
+				System.out.println("**********link have been removed!***********");
+				System.out.println("source dpid " + ldu.getSrc());
+				System.out.println("destination dpid " + ldu.getDst());
+			} else if(ldu.getOperation().equals(ILinkDiscovery.UpdateOperation.LINK_UPDATED)) {
+				System.out.println("**********link have been updated!***********");
+				System.out.println("source dpid " + ldu.getSrc());
+				System.out.println("destination dpid " + ldu.getDst());
+			}
+		}
 	}
 
 }
