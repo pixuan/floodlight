@@ -14,12 +14,20 @@ import net.floodlightcontroller.core.IOFMessageListener;
 import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.routing.IRoutingDecision;
 import net.floodlightcontroller.routing.RoutingDecision;
+import net.floodlightcontroller.topology.ITopologyService;
+import net.floodlightcontroller.util.OFMessageDamper;
 
 public abstract class AbstractFailoverForwarding implements IOFMessageListener{
 	protected static Logger log =
 			LoggerFactory.getLogger(AbstractFailoverForwarding.class);
 	
+	protected static int OFMESSAGE_DAMPER_CAPACITY = 10000; // TODO: find sweet spot
+	protected static int OFMESSAGE_DAMPER_TIMEOUT = 250; // ms
+	
 	protected IFloodlightProviderService floodlightProviderService;
+	protected ITopologyService topologyService;
+	
+	protected OFMessageDamper messageDamper;
 	
 	/**
 	 * All subclasses must define this function if they want any specific
@@ -56,11 +64,9 @@ public abstract class AbstractFailoverForwarding implements IOFMessageListener{
 	 *
 	 */
 	protected void init() {
-		/*
 		messageDamper = new OFMessageDamper(OFMESSAGE_DAMPER_CAPACITY,
 				EnumSet.of(OFType.FLOW_MOD),
 				OFMESSAGE_DAMPER_TIMEOUT);
-		*/
 	}
 	
 	/**
