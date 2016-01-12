@@ -2,18 +2,29 @@ package net.floodlightcontroller.failover;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import org.projectfloodlight.openflow.protocol.OFFlowModCommand;
 import org.projectfloodlight.openflow.protocol.OFPacketIn;
 import org.projectfloodlight.openflow.protocol.OFPacketOut;
 import org.projectfloodlight.openflow.protocol.OFType;
 import org.projectfloodlight.openflow.protocol.OFVersion;
 import org.projectfloodlight.openflow.protocol.action.OFAction;
+import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
+import org.projectfloodlight.openflow.types.DatapathId;
+import org.projectfloodlight.openflow.types.EthType;
+import org.projectfloodlight.openflow.types.IPv4Address;
+import org.projectfloodlight.openflow.types.IpProtocol;
+import org.projectfloodlight.openflow.types.MacAddress;
 import org.projectfloodlight.openflow.types.OFBufferId;
 import org.projectfloodlight.openflow.types.OFPort;
+import org.projectfloodlight.openflow.types.OFVlanVidMatch;
+import org.projectfloodlight.openflow.types.U64;
+import org.projectfloodlight.openflow.types.VlanVid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,19 +32,32 @@ import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.IFloodlightProviderService;
 import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.core.IListener.Command;
+import net.floodlightcontroller.core.internal.IOFSwitchService;
 import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
+import net.floodlightcontroller.core.util.AppCookie;
+import net.floodlightcontroller.devicemanager.IDevice;
+import net.floodlightcontroller.devicemanager.IDeviceService;
+import net.floodlightcontroller.devicemanager.SwitchPort;
 import net.floodlightcontroller.packet.Ethernet;
+import net.floodlightcontroller.packet.IPv4;
+import net.floodlightcontroller.packet.TCP;
+import net.floodlightcontroller.packet.UDP;
 import net.floodlightcontroller.routing.IRoutingDecision;
+import net.floodlightcontroller.routing.IRoutingService;
+import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.topology.ITopologyService;
 
 public class RestorationForwarding extends AbstractFailoverForwarding implements
-		IFloodlightModule {
+		IFloodlightModule, IFailureDiscoveryListener {
 	protected static Logger log =
 			LoggerFactory.getLogger(RestorationForwarding.class);
 
+	// failure discovery
+	protected IFailureDiscoveryService failureDiscoveryService;
+	
 	// ****************
 	// AbstractFailoverForwarding
 	// ****************
@@ -42,11 +66,6 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 	public net.floodlightcontroller.core.IListener.Command processPacketInMessage(
 			IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision,
 			FloodlightContext cntx) {
-		System.out.println("*******restoration forwarding*******");
-		System.out.println("packet in : " + pi.getData());
-		System.out.println("decision is null : " + (decision == null));
-		System.out.println("*******restoration forwarding*******");
-		
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 		
 		// We found a routing decision (i.e. Firewall is enabled... it's the only thing that makes RoutingDecisions)
@@ -90,19 +109,181 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 	}
 	
 	protected void doForwardFlow(IOFSwitch sw, OFPacketIn pi, FloodlightContext cntx, boolean requestFlowRemovedNotifn) {
-		System.out.println("--------------");
-		System.out.println("doForwardFlow : " + sw.getId());
-		System.out.println("packet in port : " + pi.getMatch().get(MatchField.IN_PORT));
-		System.out.println("packet in data : " + pi.getData().toString());
-		System.out.println("--------------");
 		
+		OFPort inPort = (pi.getVersion().compareTo(OFVersion.OF_12) < 0 ? pi.getInPort() : pi.getMatch().get(MatchField.IN_PORT));
+		// Check if we have the location of the destination
+		IDevice dstDevice = IDeviceService.fcStore.get(cntx, IDeviceService.CONTEXT_DST_DEVICE);
+		
+		if(dstDevice != null) {
+			IDevice srcDevice = IDeviceService.fcStore.get(cntx, IDeviceService.CONTEXT_SRC_DEVICE);
+			DatapathId srcIsland = topologyService.getL2DomainId(sw.getId());
+			
+			if (srcDevice == null) {
+				log.debug("No device entry found for source device");
+				return;
+			}
+			if (srcIsland == null) {
+				log.debug("No openflow island found for source {}/{}",
+						sw.getId().toString(), inPort);
+				return;
+			}
+			
+			// Validate that we have a destination known on the same island
+			// Validate that the source and destination are not on the same switchport
+			boolean on_same_island = false;
+			boolean on_same_if = false;
+			for(SwitchPort dstDap : dstDevice.getAttachmentPoints()) {
+				DatapathId dstSwDpid = dstDap.getSwitchDPID();
+				DatapathId dstIsland = topologyService.getL2DomainId(dstSwDpid);
+				if(dstIsland != null && dstIsland.equals(srcIsland)) {
+					on_same_island = true;
+					if(sw.getId().equals(dstSwDpid) && inPort.equals(dstDap.getPort())) {
+						on_same_if = true;
+					}
+					break;
+				}
+			}
+			
+			if (!on_same_island) {
+				// Flood since we don't know the dst device
+				if (log.isTraceEnabled()) {
+					log.trace("No first hop island found for destination " +
+							"device {}, Action = flooding", dstDevice);
+				}
+				doFlood(sw, pi, cntx);
+				return;
+			}
+
+			if (on_same_if) {
+				if (log.isTraceEnabled()) {
+					log.trace("Both source and destination are on the same " +
+							"switch/port {}/{}, Action = NOP",
+							sw.toString(), inPort);
+				}
+				return;
+			}
+
+			// Install all the routes where both src and dst have attachment
+			// points.  Since the lists are stored in sorted order we can
+			// traverse the attachment points in O(m+n) time
+			SwitchPort[] srcDaps = srcDevice.getAttachmentPoints();
+			Arrays.sort(srcDaps, clusterIdComparator);
+			SwitchPort[] dstDaps = dstDevice.getAttachmentPoints();
+			Arrays.sort(dstDaps, clusterIdComparator);
+			
+			int iSrcDaps = 0, iDstDaps = 0;
+			while(iSrcDaps < srcDaps.length && iDstDaps < dstDaps.length) {
+				SwitchPort srcDap = srcDaps[iSrcDaps];
+				SwitchPort dstDap = dstDaps[iDstDaps];
+				
+				// srcCluster and dstCluster here cannot be null as
+				// every switch will be at least in its own L2 domain.
+				DatapathId srcCluster = topologyService.getL2DomainId(srcDap.getSwitchDPID());
+				DatapathId dstCluster = topologyService.getL2DomainId(dstDap.getSwitchDPID());
+				
+				int srcVsDest = srcCluster.compareTo(dstCluster);
+				if(srcVsDest == 0) {
+					if (!srcDap.equals(dstDap)) {
+						System.out.println("prepare to assign a flowtable to the route here!");
+						//TODO From here to send the flow add message to the OpenFlow switch
+						Route route = routingEngineService.getRoute(srcDap.getSwitchDPID(), srcDap.getPort(),
+										dstDap.getSwitchDPID(), dstDap.getPort(), U64.of(0));
+						if(route != null) {
+							if (log.isTraceEnabled()) {
+								log.trace("pushRoute inPort={} route={} " +
+										"destination={}:{}",
+										new Object[] { inPort, route,
+										dstDap.getSwitchDPID(),
+										dstDap.getPort()});
+							}
+							U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
+							
+							// if there is prior routing decision use route's match
+							Match routeMatch = null;
+							IRoutingDecision decision = null;
+							if(cntx != null) {
+								decision = IRoutingDecision.rtStore.get(cntx, IRoutingDecision.CONTEXT_DECISION);
+							}
+							if(decision != null) {
+								routeMatch = decision.getMatch();
+							} else {
+								// The packet in match will only contain the port number.
+								// We need to add in specifics for the hosts we're routing between.
+								Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, 
+										IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+								VlanVid vlan = VlanVid.ofVlan(eth.getVlanID());
+								MacAddress srcMac = eth.getSourceMACAddress();
+								MacAddress dstMac = eth.getDestinationMACAddress();
+								
+								// A retentive builder will remember all MatchFields of the parent the builder was generated from
+								// With a normal builder, all parent MatchFields will be lost if any MatchFields are added, mod, del
+								// TODO (This is a bug in Loxigen and the retentive builder is a workaround.)
+								Match.Builder mb = sw.getOFFactory().buildMatch();
+								mb.setExact(MatchField.IN_PORT, inPort)
+									.setExact(MatchField.ETH_SRC, srcMac)
+									.setExact(MatchField.ETH_DST, dstMac);
+								
+								if(!vlan.equals(VlanVid.ZERO)) {
+									mb.setExact(MatchField.VLAN_VID, OFVlanVidMatch.ofVlanVid(vlan));
+								}
+								// TODO Detect switch type and match to create hardware-implemented flow
+								// TODO Set option in config file to support specific or MAC-only matches
+								if(eth.getEtherType() == Ethernet.TYPE_IPv4) {
+									IPv4 ip = (IPv4)eth.getPayload();
+									IPv4Address srcIp = ip.getSourceAddress();
+									IPv4Address dstIp = ip.getDestinationAddress();
+									mb.setExact(MatchField.IPV4_SRC, srcIp)
+										.setExact(MatchField.IPV4_DST, dstIp)
+										.setExact(MatchField.ETH_TYPE, EthType.IPv4);
+									
+									if(ip.getProtocol().equals(IpProtocol.TCP)) {
+										TCP tcp = (TCP)ip.getPayload();
+										mb.setExact(MatchField.IP_PROTO, IpProtocol.TCP)
+											.setExact(MatchField.TCP_SRC, tcp.getSourcePort())
+											.setExact(MatchField.TCP_DST, tcp.getDestinationPort());
+									} else if(ip.getProtocol().equals(IpProtocol.UDP)) {
+										UDP udp = (UDP)ip.getPayload();
+										mb.setExact(MatchField.IP_PROTO, IpProtocol.UDP)
+											.setExact(MatchField.UDP_SRC, udp.getSourcePort())
+											.setExact(MatchField.UDP_DST, udp.getDestinationPort());
+									}
+									
+								} else if(eth.getEtherType() == Ethernet.TYPE_ARP) {
+									mb.setExact(MatchField.ETH_TYPE, EthType.ARP);
+								}
+								
+								routeMatch = mb.build();
+
+							}
+							
+							//TODO From here to pushRoute based on route and routeMatch;
+							
+
+							pushRoute(route, routeMatch, pi, sw.getId(), cookie,
+									cntx, requestFlowRemovedNotifn, false,
+									OFFlowModCommand.ADD);
+							
+						} else {
+							log.info("No route is found between src/dst {}/{}", 
+									srcDap.getSwitchDPID(), dstDap.getSwitchDPID());
+						}
+					}
+					
+					iSrcDaps++;
+					iDstDaps++;
+				} else if(srcVsDest < 0) {
+					iSrcDaps++;
+				} else {
+					iDstDaps++;
+				}
+			}
+		} else {
+			// Flood since we don't know the dst device
+			doFlood(sw, pi, cntx);
+		}
 	}
 	
-	protected void doFlood(IOFSwitch sw, OFPacketIn pi, FloodlightContext cntx) {
-		System.out.println("++++++++++++++");
-		System.out.println("doFlood : " + sw.getId());
-		System.out.println("++++++++++++++");
-		
+	protected void doFlood(IOFSwitch sw, OFPacketIn pi, FloodlightContext cntx) {		
 		OFPort inPort = (pi.getVersion().compareTo(OFVersion.OF_12) < 0 ? pi.getInPort() : pi.getMatch().get(MatchField.IN_PORT));
 		if (topologyService.isIncomingBroadcastAllowed(sw.getId(), inPort) == false) {
 			if (log.isTraceEnabled()) {
@@ -145,8 +326,9 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 	protected void doDropFlow(IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision, FloodlightContext cntx) {
 		
 	}
+	
 	// ****************
-	// IFloodlightModule
+	// IOFMessageListener
 	// ****************
 	
 	@Override
@@ -166,6 +348,11 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 		return false;
 	}
 
+	
+	// ****************
+	// IFloodlightModule
+	// ****************
+	
 	@Override
 	public Collection<Class<? extends IFloodlightService>> getModuleServices() {
 		// We don't export any services
@@ -184,6 +371,7 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 				new ArrayList<Class<? extends IFloodlightService>>();
 		l.add(IFloodlightProviderService.class);
 		l.add(ITopologyService.class);
+		l.add(IFailureDiscoveryService.class);
 		return l;
 	}
 
@@ -193,12 +381,31 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 		super.init();
 		this.floodlightProviderService = context.getServiceImpl(IFloodlightProviderService.class);
 		this.topologyService = context.getServiceImpl(ITopologyService.class);
+		this.routingEngineService = context.getServiceImpl(IRoutingService.class);
+		this.switchService = context.getServiceImpl(IOFSwitchService.class);
+		this.failureDiscoveryService = context.getServiceImpl(IFailureDiscoveryService.class);
 	}
 
 	@Override
 	public void startUp(FloodlightModuleContext context)
 			throws FloodlightModuleException {
 		super.startUp();
+		failureDiscoveryService.addListener(this);
+	}
+	
+
+	// ****************
+	// IFailureDiscoveryListener
+	// ****************
+
+	@Override
+	public void singleLinkRemovedFailure(DatapathId slrSrc, OFPort slrSrcPort, DatapathId slrDst, OFPort slrDstPort) {
+		System.out.println("src: " + slrSrc);
+		System.out.println("src: " + slrSrc);
+		System.out.println("dst: " + slrSrcPort);
+		System.out.println("dst: " + slrDstPort);
+		
+		
 	}
 
 }
