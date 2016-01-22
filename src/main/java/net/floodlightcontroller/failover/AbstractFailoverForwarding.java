@@ -30,6 +30,7 @@ import net.floodlightcontroller.core.IOFMessageListener;
 import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.core.internal.IOFSwitchService;
 import net.floodlightcontroller.core.util.AppCookie;
+import net.floodlightcontroller.devicemanager.IDeviceService;
 import net.floodlightcontroller.devicemanager.SwitchPort;
 import net.floodlightcontroller.routing.IRoutingDecision;
 import net.floodlightcontroller.routing.IRoutingService;
@@ -56,6 +57,7 @@ public abstract class AbstractFailoverForwarding implements IOFMessageListener{
 	protected ITopologyService topologyService;
 	protected IRoutingService routingEngineService;
 	protected IOFSwitchService switchService;
+	protected IDeviceService deviceService;
 	
 	protected OFMessageDamper messageDamper;
 	
