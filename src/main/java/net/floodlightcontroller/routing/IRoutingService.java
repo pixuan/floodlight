@@ -18,6 +18,7 @@
 package net.floodlightcontroller.routing;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.OFPort;
@@ -82,5 +83,11 @@ public interface IRoutingService extends IFloodlightService {
      *  or not have tunnels as part of the path.
      */
     public boolean routeExists(DatapathId src, DatapathId dst, boolean tunnelEnabled);
-
+    
+    /**
+     *  If there exist two completely detached route then return them
+     *  else just return null
+     *  @author ZX Peng
+     */
+    public List<Route> getTwoCompletelyDetachedRoute(DatapathId srcId, OFPort srcPort, DatapathId dstId, OFPort dstPort, U64 cookie);
 }

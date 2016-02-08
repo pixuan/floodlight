@@ -844,5 +844,129 @@ public class TopologyInstance {
     getAllowedIncomingBroadcastPort(DatapathId src, OFPort srcPort) {
         return null;
     }
+
+
+    /**
+     * just for protection forwarding rightnow
+     * @param object
+     * @param src
+     * @param srcPort
+     * @param dst
+     * @param dstPort
+     * @param cookie
+     * @return
+     * @author ZX Peng 
+     */
+	public List<Route> getTwoCompletelyDetachedRoute(ServiceChain sc,
+			DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort,
+			U64 cookie) {
+		
+		//FIXME: 拓扑链路权重最大值，初步设置为10000(待商榷)，如果设置为Integer。MAX_VALUE，会在dijstra方法里溢出为Integer.MIN_VALUE
+		final int topologyMaxWeight = 10000;
+		
+		List<Route> twoCDRouteList = new ArrayList<Route>();
+		
+		//compute the first route
+        destinationRootedTrees.clear();
+
+        Map<Link, Integer> linkCost = new HashMap<Link, Integer>();
+        int tunnel_weight = switchPorts.size() + 1;
+
+        for(NodePortTuple npt: tunnelPorts) {
+            if (switchPortLinks.get(npt) == null) continue;
+            for(Link link: switchPortLinks.get(npt)) {
+                if (link == null) continue;
+                linkCost.put(link, tunnel_weight);
+            }
+        }
+
+        for(Cluster c: clusters) {
+            for (DatapathId node : c.links.keySet()) {
+                BroadcastTree tree = dijkstra(c, node, linkCost, true);
+                destinationRootedTrees.put(node, tree);
+            }
+        }
+        
+        Route firstRoute = buildroute(new RouteId(src, dst));
+        
+        List<NodePortTuple> firstNptList;
+        NodePortTuple firstNpt;
+        
+        if (firstRoute == null && !src.equals(dst)) return null;
+
+        if (firstRoute != null) {
+        	firstNptList= new ArrayList<NodePortTuple>(firstRoute.getPath());
+        } else {
+        	firstNptList = new ArrayList<NodePortTuple>();
+        }
+        
+        //先修改链路权重，再添加源目节点到route
+        for(int index=firstRoute.getPath().size()-1; index>0; index-=2) {
+        	NodePortTuple nodePt = firstRoute.getPath().get(index);
+        	for(Link link : switchPortLinks.get(nodePt)) {
+        		if(link == null) continue;
+        		linkCost.put(link, topologyMaxWeight);
+        	}
+        }       
+        /*
+        for(int index=firstRoute.getPath().size()-2; index>1; index-=2) {
+        	NodePortTuple nodePt = firstRoute.getPath().get(index);
+        	DatapathId dpid = nodePt.getNodeId();
+        	Set<NodePortTuple> nptSet = getBroadcastNodePortsInCluster(dpid);
+        	for(NodePortTuple npt : nptSet) {
+	        	for(Link link : switchPortLinks.get(npt)) {
+	        		if(link == null) continue;
+	        		linkCost.put(link, topologyMaxWeight);
+	        	}
+        	}
+        }
+        */
+        
+        firstNpt = new NodePortTuple(src, srcPort);
+        firstNptList.add(0, firstNpt); // add src port to the front
+        firstNpt = new NodePortTuple(dst, dstPort);
+        firstNptList.add(firstNpt); // add dst port to the end
+
+        RouteId id = new RouteId(src, dst);
+        firstRoute = new Route(id, firstNptList);
+        
+        twoCDRouteList.add(firstRoute);
+        
+        
+        //compute the second route which is completely detached from the first one  
+        destinationRootedTrees.clear();
+        
+        for(Cluster c: clusters) {
+            for (DatapathId node : c.links.keySet()) {
+                BroadcastTree tree = dijkstra(c, node, linkCost, true);
+                destinationRootedTrees.put(node, tree);
+            }
+        }
+        
+        Route secondRoute = buildroute(new RouteId(src, dst));
+        
+        List<NodePortTuple> secondNptList;
+        NodePortTuple secondNpt;
+        
+        if (secondRoute == null && !src.equals(dst)) return twoCDRouteList;
+
+        if (secondRoute != null) {
+        	secondNptList= new ArrayList<NodePortTuple>(secondRoute.getPath());
+        } else {
+        	secondNptList = new ArrayList<NodePortTuple>();
+        }
+        
+        secondNpt = new NodePortTuple(src, srcPort);
+        secondNptList.add(0, secondNpt); // add src port to the front
+        secondNpt = new NodePortTuple(dst, dstPort);
+        secondNptList.add(secondNpt); // add dst port to the end
+
+        secondRoute = new Route(id, secondNptList);
+        
+        twoCDRouteList.add(secondRoute);
+                
+		return twoCDRouteList;
+	}
+    
 }
 

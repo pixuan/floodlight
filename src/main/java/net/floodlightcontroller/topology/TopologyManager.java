@@ -717,6 +717,18 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		result.add(getRoute(srcDpid, dstDpid, U64.of(0), tunnelEnabled));
 		return result;
 	}
+	
+	/**
+	 * just for protection forwarding rightnow
+	 * @author ZX Peng
+	 */
+	@Override
+	public List<Route> getTwoCompletelyDetachedRoute(DatapathId src, OFPort srcPort, 
+			DatapathId dst, OFPort dstPort, U64 cookie) {
+		boolean tunnelEnabled = true;
+		TopologyInstance ti = getCurrentInstance(tunnelEnabled);
+		return ti.getTwoCompletelyDetachedRoute(null, src, srcPort, dst, dstPort, cookie);
+	}
 
 	// ******************
 	// IOFMessageListener
