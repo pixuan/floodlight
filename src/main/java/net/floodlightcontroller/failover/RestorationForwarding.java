@@ -37,18 +37,6 @@ import org.projectfloodlight.openflow.types.VlanVid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-
-
-
-
-
-
-
-
-
-
-
 import com.google.common.util.concurrent.ListenableFuture;
 
 import net.floodlightcontroller.core.FloodlightContext;
