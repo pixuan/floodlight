@@ -199,7 +199,7 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 				int srcVsDest = srcCluster.compareTo(dstCluster);
 				if(srcVsDest == 0) {
 					if (!srcDap.equals(dstDap)) {
-						System.out.println("prepare to assign a flowtable to the route here!");
+						//System.out.println("prepare to assign a flowtable to the route here!");
 						//TODO From here to send the flow add message to the OpenFlow switch
 						Route route = routingEngineService.getRoute(srcDap.getSwitchDPID(), srcDap.getPort(),
 										dstDap.getSwitchDPID(), dstDap.getPort(), U64.of(0));
@@ -608,12 +608,12 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 								
 								final int currentPriority = fsEntry.getPriority();
 								
-								System.out.println("prepare to reassign a flowtable to the route here!");
+								//System.out.println("prepare to reassign a flowtable to the route here!");
 								//TODO From here to send the flow add message to the OpenFlow switch
 								Route route = routingEngineService.getRoute(srcDap.getSwitchDPID(), srcDap.getPort(),
 												dstDap.getSwitchDPID(), dstDap.getPort(), U64.of(0));
 								if(route != null) {
-									System.out.println("the route is :" + route);
+									//System.out.println("the route is :" + route);
 									
 									U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
 									
@@ -646,20 +646,20 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 									}
 									routeMatch = mb.build();
 									
-									System.out.println("match :" + match);
-									System.out.println("route match :" + routeMatch);
+									//System.out.println("match :" + match);
+									//System.out.println("route match :" + routeMatch);
 									
 									boolean ifpushed = pushReassignedRoute(route, routeMatch, 
 											srcDap.getSwitchDPID(), cookie, currentPriority, false,
 											false, OFFlowModCommand.ADD);
-									System.out.println("if pushed : " + ifpushed);
+									//System.out.println("if pushed : " + ifpushed);
 								}
 						
 								// push reverse route 
 								Route reverseRoute = routingEngineService.getRoute(dstDap.getSwitchDPID(), dstDap.getPort(),
 																	srcDap.getSwitchDPID(), srcDap.getPort(), U64.of(0));
 								if(reverseRoute != null) {
-									System.out.println("the reverseRoute is :" + reverseRoute);
+									//System.out.println("the reverseRoute is :" + reverseRoute);
 									
 									U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
 									
@@ -692,13 +692,13 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 									}
 									routeMatch = mb.build();
 									
-									System.out.println("match :" + match);
-									System.out.println("reverse route match :" + routeMatch);
+									//System.out.println("match :" + match);
+									//System.out.println("reverse route match :" + routeMatch);
 									
 									boolean ifpushedReverseRoute = pushReassignedRoute(reverseRoute, routeMatch, 
 											dstDap.getSwitchDPID(), cookie, currentPriority, false,
 											false, OFFlowModCommand.ADD);
-									System.out.println("if pushed reverseRoute : " + ifpushedReverseRoute);
+									//System.out.println("if pushed reverseRoute : " + ifpushedReverseRoute);
 								}
 							}
 							iSrcDaps++;
@@ -713,7 +713,7 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 					log.error("the srcDevice or dstDevice of flowstats entry {} is null", fsEntry);
 				}
 			}
-			System.out.println("flow table: " + statsReplyList);
+			//System.out.println("flow table: " + statsReplyList);
 			
 		}
 		
@@ -794,7 +794,7 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 								outPort });
 					}
 					boolean writed = messageDamper.write(sw, fmb.build());
-					System.out.println("writed : " + writed);
+					//System.out.println("writed : " + writed);
 					if(doFlush) {
 						sw.flush();
 					}
