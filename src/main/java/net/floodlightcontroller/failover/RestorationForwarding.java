@@ -48,6 +48,7 @@ import org.slf4j.LoggerFactory;
 
 
 
+
 import com.google.common.util.concurrent.ListenableFuture;
 
 import net.floodlightcontroller.core.FloodlightContext;
@@ -350,7 +351,45 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 	}
 	
 	protected void doDropFlow(IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision, FloodlightContext cntx) {
-		
+		// initialize match structure and populate it based on the packet in's match
+		Match.Builder mb = null;
+		if (decision.getMatch() != null) {
+			/* This routing decision should be a match object with all appropriate fields set,
+			 * not just masked. If it's a decision that matches the packet we received, then simply setting
+			 * the masks to the new match will create the same match in the end. We can just use the routing
+			 * match object instead.
+			 * 
+			 * The Firewall is currently the only module/service that sets routing decisions in the context 
+			 * store (or instantiates any for that matter). It's disabled by default, so as-is a decision's 
+			 * match should always be null, meaning this will never be true.
+			 */
+			mb = decision.getMatch().createBuilder();
+		} else {
+			mb = pi.getMatch().createBuilder(); // otherwise no route is known so go based on packet's match object
+		}
+
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd(); // this will be a drop-flow; a flow that will not output to any ports
+		List<OFAction> actions = new ArrayList<OFAction>(); // set no action to drop
+		U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
+
+		fmb.setCookie(cookie)
+		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
+		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
+		.setBufferId(OFBufferId.NO_BUFFER)
+		.setMatch(mb.build())
+		.setActions(actions) // empty list
+		.setPriority(FLOWMOD_DEFAULT_PRIORITY);
+
+		try {
+			if (log.isDebugEnabled()) {
+				log.debug("write drop flow-mod sw={} match={} flow-mod={}",
+						new Object[] { sw, mb.build(), fmb.build() });
+			}
+			boolean dampened = messageDamper.write(sw, fmb.build());
+			log.debug("OFMessage dampened: {}", dampened);
+		} catch (IOException e) {
+			log.error("Failure writing drop flow mod", e);
+		}
 	}
 	
 	// ****************
