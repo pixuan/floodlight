@@ -213,7 +213,7 @@ public class ProtectionForwarding extends AbstractFailoverForwarding implements
 							return;
 						}
 						else if (tCDRouteList.size() == 1) { 
-							System.out.println("tCDRouteList : \n" + tCDRouteList);
+							//System.out.println("tCDRouteList : \n" + tCDRouteList);
 							
 							//As there isn't redundant route, just push flow table to switches
 							Route route = tCDRouteList.get(0);
