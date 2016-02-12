@@ -26,3 +26,4 @@ net.floodlightcontroller.firewall.Firewall
 net.floodlightcontroller.failover.FailureDiscovery
 net.floodlightcontroller.failover.RestorationForwarding
 net.floodlightcontroller.failover.ProtectionForwarding
+net.floodlightcontroller.failover.FastFailureRestorationForwarding

@@ -6,5 +6,5 @@ import org.projectfloodlight.openflow.types.OFPort;
 
 public interface IFailureDiscoveryListener {
 	
-	public void singleLinkRemovedFailure(DatapathId slrDrc,OFPort slrSrcPort, DatapathId slrDst, OFPort slrDstPort);
+	public void singleLinkRemovedFailure(DatapathId slrSrc,OFPort slrSrcPort, DatapathId slrDst, OFPort slrDstPort);
 }
