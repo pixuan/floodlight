@@ -443,11 +443,24 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 	@Override
 	public void singleLinkRemovedFailure(DatapathId slrSrc, OFPort slrSrcPort,
 			DatapathId slrDst, OFPort slrDstPort) {
-		log.info("There is a link failure between" + slrSrc + " and " + slrDst);
+		//log.info("There is a link failure between" + slrSrc + " and " + slrDst);
+		
+		//
+		long calcFRRTimeBegin = System.nanoTime(); 
+		//
+		
 		Route route = routingEngineService.getRoute(slrSrc, slrSrcPort,
 				slrDst, slrDstPort, U64.of(0));
 		Route reverseRoute = routingEngineService.getRoute(slrDst, slrDstPort,
 				slrSrc, slrSrcPort, U64.of(0));
+		
+		//
+		long calcFRRTimeEnd = System.nanoTime();
+		log.info("calcFRRTimeBegin : " + calcFRRTimeBegin);
+		log.info("calcFRRTimeEnd : " + calcFRRTimeEnd);
+		log.info("calcFRRTime : " + (calcFRRTimeEnd - calcFRRTimeBegin));
+		//
+		
 		if(route == null || reverseRoute == null)
 			return;
 		
@@ -478,7 +491,13 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 		}
 		
 		@Override
-		public void run() {			
+		public void run() {
+			
+			//
+			long allFailoverTimeBegin = System.nanoTime();
+			long failFlowsLookupTimeBegin = System.nanoTime();
+			//
+			
 			IOFSwitch srcSwitch = switchService.getActiveSwitch(src);
 			if(srcSwitch == null) {
 				log.error("the src switch is null" + src);
@@ -512,6 +531,17 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 			OFFlowStatsReply flowStatsReply = statsReplyList.get(0);
 			List<OFFlowStatsEntry> flowStatsEntryList = flowStatsReply.getEntries();
 			
+			//
+			long failFlowsLookupTimeEnd = System.nanoTime();
+			log.info("failFlowsLookupTimeBegin : " + failFlowsLookupTimeBegin);
+			log.info("failFlowsLookupTimeEnd : " + failFlowsLookupTimeEnd);
+			log.info("failFlowsLookupTime : " + (failFlowsLookupTimeEnd - failFlowsLookupTimeBegin));
+			//
+			
+			//
+			long failflowModTimeBegin = System.nanoTime();
+			//
+			
 			for(OFFlowStatsEntry fsEntry : flowStatsEntryList) {
 				Match match = fsEntry.getMatch();
 				MacAddress eth_src = match.get(MatchField.ETH_SRC);
@@ -519,6 +549,10 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 				OFPort inport = match.get(MatchField.IN_PORT);
 				OFPort outport = null;
 				final int currentPriority = fsEntry.getPriority();
+				
+				//
+				long outportLookupTimeBegin = System.nanoTime();
+				//
 				
 				//查询该流对应局部链路目的交换机的出端口
 				dstMb = MatchUtils.createRetentiveBuilder(match);
@@ -558,6 +592,13 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 				//System.out.println("route: " + route);
 				//System.out.println("reverseRoute: " + reverseRoute);
 				
+				//
+				long outportLookupTimeEnd = System.nanoTime();
+				log.info("outportLookupTimeBegin : " + outportLookupTimeBegin);
+				log.info("outportLookupTimeEnd : " + outportLookupTimeEnd);
+				log.info("outportLookupTime : " + (outportLookupTimeEnd - outportLookupTimeBegin));
+				//
+				
 				//环上的节点可能不止一个
 				while(route.getPath().get(0).getPortId() == route.getPath().get(1).getPortId()) {
 					deleteRingInRoute(route, match, false);
@@ -577,6 +618,10 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 					Collections.reverse(copyRouteDest);
 					route.setPath(copyRouteDest); 
 				}
+				
+				//
+				long flowModTimeBegin = System.nanoTime();
+				//
 				
 				//delete the old flow table
 				//暂时不在删除原始流表
@@ -728,7 +773,30 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 					System.out.println("if pushed reverseRoute : " + ifpushedReverseRoute);
 				}
 				*/
+				
+				//
+				long flowModTimeEnd = System.nanoTime();
+				log.info("flowModTimeBegin : " + flowModTimeBegin);
+				log.info("flowModTimeEnd : " + flowModTimeEnd);
+				log.info("flowModTime : " + (flowModTimeEnd - flowModTimeBegin));
+				//
+				
 			}
+			
+			//
+			long failflowModTimeEnd = System.nanoTime();
+			long allFailoverTimeEnd = System.nanoTime();
+			log.info("failflowModTimeBegin : " + failflowModTimeBegin);
+			log.info("failflowModTimeEnd : " + failflowModTimeEnd);
+			log.info("failflowModTime : " + (failflowModTimeEnd - failflowModTimeBegin));
+			
+			log.info("allFailoverTimeBegin : " + allFailoverTimeBegin);
+			log.info("allFailoverTimeEnd : " + allFailoverTimeEnd);
+			log.info("********");
+			log.info("allFailoverTime : " + (allFailoverTimeEnd - allFailoverTimeBegin));
+			log.info("********");
+			//
+			
 		}
 		
 		public boolean pushReassignedRoute(Route route, Match match, 
@@ -828,6 +896,10 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 		}
 		
 		public void deleteRingInRoute(Route route, Match match, boolean isReversed) {
+			//
+			long deleteRingTimeBegin = System.nanoTime();
+			//
+			
 			//移除路径中出入端口一致的路径
 			route.getPath().remove(1);
 			route.getPath().remove(0);
@@ -888,6 +960,13 @@ public class FastFailureRestorationForwarding extends AbstractFailoverForwarding
 				log.error("the ring flow stats entry list is null");
 				return;
 			}
+			
+			//
+			long deleteRingTimeEnd = System.nanoTime();
+			log.info("deleteRingTimeBegin : " + deleteRingTimeBegin);
+			log.info("deleteRingTimeEnd : " + deleteRingTimeEnd);
+			log.info("deleteRingTime : " + (deleteRingTimeEnd - deleteRingTimeBegin));
+			//
 		}
 	}
 }

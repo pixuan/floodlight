@@ -23,7 +23,11 @@ net.floodlightcontroller.loadbalancer.LoadBalancer
 net.floodlightcontroller.linkdiscovery.internal.LinkDiscoveryManager
 net.floodlightcontroller.devicemanager.internal.DeviceManagerImpl
 net.floodlightcontroller.firewall.Firewall
+net.floodlightcontroller.forwarding.Forwarding
 net.floodlightcontroller.failover.FailureDiscovery
 net.floodlightcontroller.failover.RestorationForwarding
 net.floodlightcontroller.failover.ProtectionForwarding
 net.floodlightcontroller.failover.FastFailureRestorationForwarding
+net.floodlightcontroller.failover.BaseFailoverForwarding
+net.floodlightcontroller.failover.massivefailure.Massive_failure_recovery
+net.floodlightcontroller.failover.massivefailure.GetDevices

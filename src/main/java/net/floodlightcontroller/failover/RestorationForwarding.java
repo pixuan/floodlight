@@ -548,6 +548,9 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 		
 		@Override
 		public void run() {
+			//
+			long allFailFlowsLookupTimeBegin = System.nanoTime();
+			//
 			ListenableFuture<List<OFFlowStatsReply>> lf = sw.writeStatsRequest(fsrb.build());
 			try {
 				statsReplyList = (List<OFFlowStatsReply>)lf.get(PORT_STATS_INTERVAL / 2, TimeUnit.SECONDS);
@@ -559,6 +562,15 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 				return;
 			OFFlowStatsReply flowStatsReply = statsReplyList.get(0);
 			List<OFFlowStatsEntry> flowStatsEntryList = flowStatsReply.getEntries();
+			//
+			long allFailFlowsLookupTimeEnd = System.nanoTime();
+			log.info("allFailFlowsLookupTimeBegin : " + allFailFlowsLookupTimeBegin);
+			log.info("allFailFlowsLookupTimeEnd : " + allFailFlowsLookupTimeEnd);
+			log.info("allFailFlowsLookupTime : " + (allFailFlowsLookupTimeEnd - allFailFlowsLookupTimeBegin));
+			//
+			//
+			long allFailFlowsRestorationTimeBegin = System.nanoTime();
+			//
 			for(OFFlowStatsEntry fsEntry : flowStatsEntryList) {
 				Match match = fsEntry.getMatch();
 				MacAddress eth_src = match.get(MatchField.ETH_SRC);
@@ -608,10 +620,27 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 								
 								final int currentPriority = fsEntry.getPriority();
 								
+								//
+								long calcRestorationTimeBegin = System.nanoTime();
+								//
 								//System.out.println("prepare to reassign a flowtable to the route here!");
 								//TODO From here to send the flow add message to the OpenFlow switch
 								Route route = routingEngineService.getRoute(srcDap.getSwitchDPID(), srcDap.getPort(),
 												dstDap.getSwitchDPID(), dstDap.getPort(), U64.of(0));
+								// push reverse route 
+								Route reverseRoute = routingEngineService.getRoute(dstDap.getSwitchDPID(), dstDap.getPort(),
+																	srcDap.getSwitchDPID(), srcDap.getPort(), U64.of(0));
+								
+								//
+								long calcRestorationTimeEnd = System.nanoTime();
+								log.info("calcRestorationTimeBegin : " + calcRestorationTimeBegin);
+								log.info("calcRestorationTimeEnd : " + calcRestorationTimeEnd);
+								log.info("calcRestorationTime : " + (calcRestorationTimeEnd - calcRestorationTimeBegin));
+								//
+								
+								//
+								long flowModTimeBegin = System.nanoTime();
+								//
 								if(route != null) {
 									//System.out.println("the route is :" + route);
 									
@@ -655,9 +684,7 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 									//System.out.println("if pushed : " + ifpushed);
 								}
 						
-								// push reverse route 
-								Route reverseRoute = routingEngineService.getRoute(dstDap.getSwitchDPID(), dstDap.getPort(),
-																	srcDap.getSwitchDPID(), srcDap.getPort(), U64.of(0));
+								
 								if(reverseRoute != null) {
 									//System.out.println("the reverseRoute is :" + reverseRoute);
 									
@@ -700,6 +727,13 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 											false, OFFlowModCommand.ADD);
 									//System.out.println("if pushed reverseRoute : " + ifpushedReverseRoute);
 								}
+								
+								//
+								long flowModTimeEnd = System.nanoTime();
+								log.info("flowModTimeBegin : " + flowModTimeBegin);
+								log.info("flowModTimeEnd : " + flowModTimeEnd);
+								log.info("flowModTime : " + (flowModTimeEnd - flowModTimeBegin));
+								//
 							}
 							iSrcDaps++;
 							iDstDaps++;
@@ -714,6 +748,15 @@ public class RestorationForwarding extends AbstractFailoverForwarding implements
 				}
 			}
 			//System.out.println("flow table: " + statsReplyList);
+			//
+			long allFailFlowsRestorationTimeEnd = System.nanoTime();
+			log.info("allFailFlowsRestorationTimeBegin : " + allFailFlowsRestorationTimeBegin);
+			log.info("allFailFlowsRestorationTimeEnd : " + allFailFlowsRestorationTimeEnd);
+			log.info("allFailFlowsRestorationTime : " + (allFailFlowsRestorationTimeEnd - allFailFlowsRestorationTimeBegin));
+			log.info("*******");
+			log.info("restoration time : " + (allFailFlowsRestorationTimeEnd - allFailFlowsLookupTimeBegin));
+			log.info("*******");
+			//
 			
 		}
 		

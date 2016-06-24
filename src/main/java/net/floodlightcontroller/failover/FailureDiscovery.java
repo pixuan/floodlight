@@ -15,6 +15,7 @@ import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
+import net.floodlightcontroller.failover.massivefailure.IMassiveFailureRecoveryService;
 import net.floodlightcontroller.linkdiscovery.ILinkDiscovery;
 import net.floodlightcontroller.linkdiscovery.ILinkDiscovery.LDUpdate;
 import net.floodlightcontroller.topology.ITopologyListener;
@@ -27,6 +28,10 @@ public class FailureDiscovery implements IFloodlightModule, ITopologyListener, I
 	
 	
 	protected ArrayList<IFailureDiscoveryListener> failureDiscoveryListeners;
+	protected IMassiveFailureRecoveryService massivefailurerecoveryservice;
+	
+	private int linkRemovedCount = 0;
+	private List<LDUpdate> allRemovedLinkList = new ArrayList<LDUpdate>();
 	
 	//********************
 	// IFloodlightModule
@@ -54,6 +59,7 @@ public class FailureDiscovery implements IFloodlightModule, ITopologyListener, I
 	    Collection<Class<? extends IFloodlightService>> l =
 	            new ArrayList<Class<? extends IFloodlightService>>();
 	        l.add(ITopologyService.class);
+	        l.add(IMassiveFailureRecoveryService.class);
 	        return l;
 	}
 
@@ -62,6 +68,7 @@ public class FailureDiscovery implements IFloodlightModule, ITopologyListener, I
 			throws FloodlightModuleException {
 		logger = LoggerFactory.getLogger(FailureDiscovery.class);
 		topologyService = context.getServiceImpl(ITopologyService.class);
+		this.massivefailurerecoveryservice = context.getServiceImpl(IMassiveFailureRecoveryService.class);
 		
 		
 		// We create this here because there is no ordering guarantee
@@ -89,7 +96,8 @@ public class FailureDiscovery implements IFloodlightModule, ITopologyListener, I
 		System.out.println("linkUpdates " + linkUpdates);
 		*/
 		
-		int linkRemovedCount = 0;
+		//int linkRemovedCount = 0;
+		
 		DatapathId singlelinkRemovedSrc = null;
 		DatapathId singlelinkRemovedDst = null;
 		OFPort singlelinkRemovedSrcPort = null;
@@ -103,6 +111,9 @@ public class FailureDiscovery implements IFloodlightModule, ITopologyListener, I
 					singlelinkRemovedSrcPort = ldu.getSrcPort();
 					singlelinkRemovedDstPort = ldu.getDstPort();
 				}
+				if(linkRemovedCount % 2 == 0) {
+					allRemovedLinkList.add(ldu);
+				}
 				linkRemovedCount++;
 			} else if(ldu.getOperation().equals(ILinkDiscovery.UpdateOperation.LINK_UPDATED)) {
 				/*
@@ -114,11 +125,36 @@ public class FailureDiscovery implements IFloodlightModule, ITopologyListener, I
 		}
 		
 		if(linkRemovedCount == 2) {
+			/*
 			for(IFailureDiscoveryListener fdl : failureDiscoveryListeners) {
 				fdl.singleLinkRemovedFailure(singlelinkRemovedSrc, singlelinkRemovedSrcPort, singlelinkRemovedDst, singlelinkRemovedDstPort);
 			}
-		} else {
+			*/
+		} else if (linkRemovedCount == 26) {
 			//System.out.println("others situation!");
+			massivefailurerecoveryservice.startmassiverecovery();
+			/*
+			//
+			long restorationTimeBegin = System.nanoTime();
+			//
+			for(LDUpdate ldu : allRemovedLinkList) {
+				singlelinkRemovedSrc = ldu.getSrc();
+				singlelinkRemovedDst = ldu.getDst();
+				singlelinkRemovedSrcPort = ldu.getSrcPort();
+				singlelinkRemovedDstPort = ldu.getDstPort();
+				for(IFailureDiscoveryListener fdl : failureDiscoveryListeners) {
+					fdl.singleLinkRemovedFailure(singlelinkRemovedSrc, singlelinkRemovedSrcPort, singlelinkRemovedDst, singlelinkRemovedDstPort);
+				}
+			}
+			
+			//
+			long restorationTimeEnd = System.nanoTime();
+			System.out.println("restorationTimeBegin : " + restorationTimeBegin);
+			System.out.println("restorationTimeEnd : " + restorationTimeEnd);
+			System.out.println("restorationTime : " + (restorationTimeEnd - restorationTimeBegin));
+			//
+			*/
+			linkRemovedCount = 0;
 		}
 	}
 
